@@ -1,0 +1,20 @@
+steps:
+- task: Gradle@2
+  inputs:
+    gradleWrapperFile: 'gradlew'
+    tasks: 'clean build test upload'
+- script: |
+    echo '##vso[build.addbuildtag]Linted'
+  displayName: Tag pipeline linted
+- script: |
+    echo '##vso[build.addbuildtag]Compiled'
+  displayName: Tag pipeline compiled
+- script: |
+    echo '##vso[build.addbuildtag]UnitTested'
+  displayName: Tag pipeline unit tested
+- script: |
+    echo '##vso[build.addbuildtag]Packaged'
+  displayName: Tag pipeline packaged
+- script: |
+    echo '##vso[build.addbuildtag]Published'
+  displayName: Tag pipeline published

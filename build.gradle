@@ -1,0 +1,274 @@
+import io.restassured.response.Response
+import java.io.*
+import org.apache.commons.io.FileUtils
+import java.text.DateFormat
+import java.text.SimpleDateFormat
+import static net.serenitybdd.rest.SerenityRest.*
+
+
+// Build Dependencies
+buildscript {
+repositories {
+    maven {
+        url 'https://pkgs.dev.azure.com/Specsavers/_packaging/STAF/maven/v1'
+        credentials {
+            username "AZURE_ARTIFACTS"
+            password System.getenv("AZURE_ARTIFACTS_ENV_ACCESS_TOKEN") ?: "${azureArtifactsGradleAccessToken}"
+        }
+    }
+    mavenCentral()
+    }
+    dependencies {
+        // Serenity Gradle Plugin - Must match dependency versions below
+        classpath "net.serenity-bdd:serenity-gradle-plugin:2.0.2"
+        classpath 'io.rest-assured:rest-assured:3.0.5'
+        classpath 'net.serenity-bdd:serenity-rest-assured:2.0.82'
+        // Nebula Plugins for build management
+        classpath 'com.netflix.nebula:gradle-lint-plugin:latest.release'
+
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'idea'
+apply plugin: 'eclipse'
+apply plugin: 'net.serenity-bdd.aggregator'
+apply plugin: 'maven'
+apply plugin: 'maven-publish'
+apply plugin: 'nebula.lint'
+
+
+
+
+repositories {
+    maven {
+        url 'https://pkgs.dev.azure.com/Specsavers/_packaging/STAF/maven/v1'
+        credentials {
+            username "AZURE_ARTIFACTS"
+            password System.getenv("AZURE_ARTIFACTS_ENV_ACCESS_TOKEN") ?: "${azureArtifactsGradleAccessToken}"
+        }
+    }
+}
+
+
+// For managed serenity version numbers. Must match plugin version above.
+ext {
+    serenityVersion = '2.0.82'
+}
+
+dependencies {
+    compile(
+            //Serenity Web Automation Libraries
+            "net.serenity-bdd:serenity-core:${serenityVersion}",
+            "net.serenity-bdd:serenity-junit:${serenityVersion}",
+            "net.serenity-bdd:serenity-screenplay-webdriver:${serenityVersion}",
+            'net.serenity-bdd:serenity-cucumber:1.9.7',
+            'io.github.bonigarcia:webdrivermanager:3.3.0',
+
+            //Serenity Rest Assured Libraries
+            "net.serenity-bdd:serenity-rest-assured:${serenityVersion}",
+            'com.jayway.restassured:rest-assured:2.9.0',
+
+            //JSON Libraries
+            'com.google.code.gson:gson:2.8.5',
+            'org.json:json:20180130',
+
+            // Assertions & Others
+            'org.assertj:assertj-core:3.10.0',
+            'ch.qos.logback:logback-classic:1.3.0-alpha4',
+            'org.seleniumhq.selenium:selenium-java:3.5.3',
+            'com.opencsv:opencsv:3.7',
+            'org.slf4j:slf4j-simple:1.7.7',
+            'junit:junit:4.12',
+            'org.apache.poi:poi-scratchpad:3.17',
+            "net.serenity-bdd:serenity-report-resources:${serenityVersion}"
+
+    )
+}
+
+gradle.startParameter.continueOnFailure = true
+
+
+// Linting Step
+gradleLint.rules = ['all-dependency']
+
+
+// Publishing Step
+publishing {
+    publications {
+        maven(MavenPublication) {
+            groupId = 'com.specsavers'
+            artifactId = 'serenity-bdd_base'
+            version = '0.0.15-SNAPSHOT'
+        }
+    }
+    repositories {
+        maven {
+            url 'https://pkgs.dev.azure.com/Specsavers/_packaging/STAF/maven/v1'
+            credentials {
+                username "AZURE_ARTIFACTS"
+                password System.getenv("AZURE_ARTIFACTS_ENV_ACCESS_TOKEN") ?: "${azureArtifactsGradleAccessToken}"
+            }
+        }
+    }
+}
+
+uploadArchives {
+    repositories {
+        mavenDeployer {
+            repository(url: "https://pkgs.dev.azure.com/Specsavers/_packaging/STAF/maven/v1") {
+                authentication(userName: "AZURE_ARTIFACTS", password: System.getenv("AZURE_ARTIFACTS_ENV_ACCESS_TOKEN") ?: "${azureArtifactsGradleAccessToken}")
+            }
+            pom.version = "0.0.15"
+            pom.artifactId = "serenity-bdd_base"
+            pom.groupId = "com.specsavers"
+        }
+    }
+}
+
+test {
+    /* Pass all system properties: */
+    systemProperties System.getProperties()
+}
+
+
+task publishQTest() {
+    doLast() {
+        //Constants
+        int i = 0
+        Response jsonResponse
+        DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
+        Date date = new Date();
+        String todayDate = dateFormat.format(date)
+
+        //Create and get test_suite
+        jsonResponse = with()
+                .header("Content-Type", "application/json")
+                .header("Authorization", "${qTestBearerToken}")
+                .body("{\"name\": \"AzureDevOps " + todayDate + "\"}")
+                .post("https://specsavers.qtestnet.com/api/v3/projects/${projectId}/test-suites?parentId=${releaseId}&parentType=release")
+        String[] idResponse = jsonResponse.getBody().asString().split(":")
+        String test_suite = idResponse[11].replaceAll("[^0-9]", "")
+
+        //Get Serenity Files
+        File filePath = new File(System.getProperty("user.dir") + File.separator + "target" + File.separator + "site" + File.separator + "serenity")
+        FilenameFilter filter = new FilenameFilter() {
+            boolean accept(File f, String name) {
+                return name.contains("json")
+            }
+        }
+        File[] jsonFiles = filePath.listFiles(filter);
+
+        File outputFile = new File(System.getProperty("user.dir") + File.separator + "target" + File.separator + "site" + File.separator + "serenity" + File.separator + "results.tmp")
+
+        FileUtils.write(outputFile, "{" +
+                "    \"projectId\": \"${projectId}\",\n" +
+                "    \"test-suite\": \"${test_suite}\",\n" +
+                "    \"fullToken\": \"${qTestFullToken}\",\n" +
+                "    \"result\": [")
+        for (File currentJsonFile : jsonFiles) {
+            i++
+            File file1 = new File(currentJsonFile.toString())
+            String file1Str = FileUtils.readFileToString(file1)
+            FileUtils.write(outputFile, file1Str, true)
+            if (i != jsonFiles.size()) {
+                FileUtils.write(outputFile, ",", true)
+            }
+        }
+        FileUtils.write(outputFile, "]}", true)
+
+        jsonResponse = with()
+                .header("Content-Type", "application/json")
+                .body(FileUtils.readFileToString(outputFile))
+                .post("https://pulse-api-us-east-1.qtestnet.com/webhook/e14a0f7c-d9ef-404b-b61d-be9b619f7b19")
+
+    }
+}
+task linkQTestReqs(){
+    doLast(){
+        //declare variables
+        int i=0
+        int y=0
+        Response jsonResponse
+        String finalTestCase
+        String finalTag
+
+        //Get requirements
+
+        jsonResponse = with()
+                .header("Content-Type", "application/json")
+                .header("Authorization", "${qTestBearerToken}")
+                .get("https://specsavers.qtestnet.com/api/v3/projects/${projectId}/requirements?size=99999")
+        String[] requirements = jsonResponse.getBody().asString().split(",")
+
+        //Get testCases
+        jsonResponse = with()
+                .header("Content-Type", "application/json")
+                .header("Authorization", "${qTestBearerToken}")
+                .get("https://specsavers.qtestnet.com/api/v3/projects/${projectId}/test-cases?page=1&size=99999")
+        String[] testCases = jsonResponse.getBody().asString().split(",")
+
+
+        //Get Serenity Files
+        File filePath = new File(System.getProperty("user.dir") + File.separator + "target" + File.separator + "site" + File.separator + "serenity")
+        FilenameFilter filter = new FilenameFilter() {
+            boolean accept(File f, String name) {
+                return name.contains("json")
+            }
+        }
+        File[] jsonFiles = filePath.listFiles(filter);
+
+        //Main Loop
+        for (File currentJsonFile : jsonFiles) {
+            i++
+            File file1 = new File(currentJsonFile.toString())
+            String file1Str = FileUtils.readFileToString(file1)
+            //Get Tag description for Requirement
+            String[] tag = file1Str.split("\"")
+            for (y = 0; y < tag.size(); y++) {
+                if (tag[y].equals("tag")) {
+                    finalTag = tag[y + 4]
+                }
+            }
+            //find matching Requirements and store as finalTag for QTest ID Field
+            for (y = 0; y < requirements.size(); y++) {
+                if (requirements[y].contains("\"name\":\"" + finalTag)) {
+                    //This is the final Requirement number for this test
+                    finalTag = requirements[y - 1].replace("\"id\":", "")
+                    println finalTag
+                }
+            }
+
+            //FIND NAME OF TEST IN SERENITY
+            String[] initTestName = file1Str.split("\"")
+            String serenityTestName
+            for (y = 0; y < initTestName.size(); y++) {
+                if (initTestName[y].equals("name")) {
+                    serenityTestName = initTestName[y + 2]
+                    break
+                }
+
+            }
+
+            //FIND CORRESPONDING TEST CASE NUMBER
+            for (y = 0; y< testCases.size(); y++)
+            {
+                if(testCases[y].contains(serenityTestName))
+                {
+                    finalTestCase=testCases[y-1].replace("\"id\":", "")
+                    println finalTestCase
+                    break
+                }
+            }
+
+            //API To link requirement and test case
+
+            jsonResponse = with()
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "${qTestBearerToken}")
+                    .body("["+finalTestCase+"]")
+                    .post("https://specsavers.qtestnet.com/api/v3/projects/${projectId}/requirements/"+finalTag+"/link?type=test-cases")
+        }
+    }
+}
+test.finalizedBy(aggregate)
