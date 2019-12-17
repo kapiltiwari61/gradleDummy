@@ -16,6 +16,7 @@ repositories {
             password System.getenv("AZURE_ARTIFACTS_ENV_ACCESS_TOKEN") ?: "${azureArtifactsGradleAccessToken}"
         }
     }
+	maven { url "https://plugins.gradle.org/m2/" }
     mavenCentral()
     }
     dependencies {
@@ -25,7 +26,7 @@ repositories {
         classpath 'net.serenity-bdd:serenity-rest-assured:2.0.82'
         // Nebula Plugins for build management
         classpath 'com.netflix.nebula:gradle-lint-plugin:latest.release'
-		classpath 'ru.fix:gradle-release-plugin:1.3.6'
+		classpath 'net.researchgate:gradle-release:2.6.0'
 
     }
 }
@@ -37,7 +38,7 @@ apply plugin: 'net.serenity-bdd.aggregator'
 apply plugin: 'maven'
 apply plugin: 'maven-publish'
 apply plugin: 'nebula.lint'
-apply plugin: 'ru.fix.gradle.release'
+apply plugin: 'net.researchgate.release'
 
 
 repositories {
