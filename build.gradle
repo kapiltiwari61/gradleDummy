@@ -94,6 +94,17 @@ gradle.startParameter.continueOnFailure = true
 // Linting Step
 gradleLint.rules = ['all-dependency']
 
+// release meta
+release {
+    git {
+        requireBranch = 'RELEASE_0.0.1'
+		pushToRemote = 'origin'
+        pushToBranchPrefix = ''
+        commitVersionFileOnly = false
+        signTag = false
+    }
+}
+
 
 // Publishing Step
 publishing {
